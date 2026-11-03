@@ -1,0 +1,14 @@
+# Gradle / Loom
+.gradle/
+build/
+run/
+out/
+# Cobblemon jar is not redistributable: each developer drops it in libs/
+libs/*.jar
+# IDE
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
