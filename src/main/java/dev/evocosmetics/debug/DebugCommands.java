@@ -1,6 +1,8 @@
 package dev.evocosmetics.debug;
 
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies;
+import com.cobblemon.mod.common.entity.pokemon.PokemonEntity;
+import com.cobblemon.mod.common.pokemon.Pokemon;
 import com.cobblemon.mod.common.pokemon.FormData;
 import com.cobblemon.mod.common.pokemon.Species;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -12,9 +14,13 @@ import dev.evocosmetics.EvolutionCosmeticsMod;
 import dev.evocosmetics.resolve.CosmeticMode;
 import dev.evocosmetics.resolve.EvolutionResolver;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.minecraft.item.ItemStack;
+import net.minecraft.registry.Registries;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.text.Text;
+import net.minecraft.util.Identifier;
+import net.minecraft.util.math.Box;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -26,7 +32,10 @@ import java.util.stream.Collectors;
 /**
  * /evocosmetics resolve <species>  - prints each form's ancestry and the Everstone / Eviolite targets.
  * /evocosmetics audit              - resolves every registered species+form; summary in chat, details in the log.
- * Read-only: no Pokémon is modified.
+ * /evocosmetics inspect            - nearest Pokémon entities (64 blocks): real species/aspects vs what is advertised to clients.
+ * /evocosmetics set <item|none>    - TEST HELPER: puts cobblemon:everstone/eviolite (or nothing) in the cosmetic slot of the
+ *                                    nearest Pokémon entity, through Cobblemon's own Pokemon#setCosmeticItem (op only).
+ * Everything except "set" is read-only.
  */
 public final class DebugCommands {
     private DebugCommands() {}
@@ -39,6 +48,10 @@ public final class DebugCommands {
                                 .then(CommandManager.argument("species", StringArgumentType.word())
                                         .executes(DebugCommands::resolve)))
                         .then(CommandManager.literal("status").executes(DebugCommands::status))
+                        .then(CommandManager.literal("inspect").executes(DebugCommands::inspect))
+                        .then(CommandManager.literal("set")
+                                .then(CommandManager.argument("item", StringArgumentType.word())
+                                        .executes(DebugCommands::setCosmetic)))
                         .then(CommandManager.literal("audit").executes(DebugCommands::audit))));
     }
 
@@ -113,5 +126,50 @@ public final class DebugCommands {
                 "Audited " + finalTotal + " species/forms. Chain length -> count: " + byLength
                         + " (details in the server log, lines starting with [audit])"), false);
         return 1;
+    }
+
+    private static List<PokemonEntity> nearby(ServerCommandSource src) {
+        Box box = Box.of(src.getPosition(), 128, 256, 128);
+        return src.getWorld().getEntitiesByClass(PokemonEntity.class, box, e -> true);
+    }
+
+    private static int inspect(CommandContext<ServerCommandSource> ctx) {
+        List<PokemonEntity> list = nearby(ctx.getSource());
+        for (PokemonEntity e : list) {
+            Pokemon p = e.getPokemon();
+            String line = e.getUuidAsString().substring(0, 8)
+                    + " REAL species=" + p.getSpecies().getResourceIdentifier() + " form=" + p.getForm().getName()
+                    + " aspects=" + p.getAspects() + " cosmeticItem=" + p.getCosmeticItem().getItem()
+                    + " | ADVERTISED species=" + e.getDataTracker().get(PokemonEntity.getSPECIES())
+                    + " aspects=" + e.getDataTracker().get(PokemonEntity.getASPECTS());
+            ctx.getSource().sendFeedback(() -> Text.literal(line), false);
+        }
+        if (list.isEmpty()) {
+            ctx.getSource().sendError(Text.literal("No Pokémon entities within 64 blocks"));
+        }
+        return list.size();
+    }
+
+    private static int setCosmetic(CommandContext<ServerCommandSource> ctx) {
+        String name = StringArgumentType.getString(ctx, "item").toLowerCase();
+        ItemStack stack = ItemStack.EMPTY;
+        if (!name.equals("none")) {
+            stack = new ItemStack(Registries.ITEM.get(Identifier.of(name.contains(":") ? name : "cobblemon:" + name)));
+            if (stack.isEmpty()) {
+                ctx.getSource().sendError(Text.literal("Unknown item: " + name));
+                return 0;
+            }
+        }
+        List<PokemonEntity> list = nearby(ctx.getSource());
+        if (list.isEmpty()) {
+            ctx.getSource().sendError(Text.literal("No Pokémon entities within 64 blocks"));
+            return 0;
+        }
+        for (PokemonEntity e : list) {
+            e.getPokemon().setCosmeticItem(stack.copy());
+        }
+        int n = list.size();
+        ctx.getSource().sendFeedback(() -> Text.literal("Cosmetic slot set on " + n + " Pokémon"), false);
+        return n;
     }
 }

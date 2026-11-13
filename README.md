@@ -1,81 +1,84 @@
-# Cobblemon Evolution Cosmetics (v0.1.0, first prototype)
+# Cobblemon Evolution Cosmetics (v0.2.0, server-side)
 
-Visual-only mod for **Minecraft 1.21.1 / Fabric / Cobblemon 1.8.1**.
-Put an **Everstone** in a Pokémon's **cosmetic slot** (`Pokemon#cosmeticItem`, *not* the held-item slot) and it
-looks like its earliest evolution stage; an **Eviolite** makes it look like its middle stage.
-The Pokémon stays the same species with the same stats, moves, ability, held item, UUID, etc.
+Put an **Everstone** in a Pokémon's *cosmetic slot* and it looks like its **earliest** evolution stage; an **Eviolite**
+makes it look like its **middle** stage. Visual only: species, stats, moves, ability, held item, UUID, hitbox and
+movement never change.
 
-> **Status:** compiled against the real Cobblemon 1.8.1 jar (JDK 21, Gradle 8.12, Loom 1.10.5) and
-> tested in game: Everstone/Eviolite in the cosmetic slot change the Pokémon's appearance.
+**Install it on the server only.** Players join with their normal Cobblemon 1.8.1 setup and install nothing extra.
 
-## How it works
-1. `data/evolution_cosmetics/cosmetic_items/evolution_items.json` registers Everstone/Eviolite with Cobblemon's own
-   cosmetic-item system for every Cobblemon species (plain species names, the same format that was confirmed working in-game
-   as a standalone datapack). Species added by other mods would need their own entries.
-   Cobblemon's built-in cosmetic-slot aspect provider turns the slotted item into the aspects
-   `evo_cosmetic-earliest` / `evo_cosmetic-middle`. Cobblemon saves the slot with the Pokémon and syncs aspects to clients.
-2. `EvolutionResolver` (pure logic) walks the registered `preEvolution` links backward from the Pokémon's own species+form.
-3. One client mixin on `VaryingModelRepository` (`getPoser/getTexture/getTextureNoSubstitute/getLayers/getSprite`)
-   re-runs the lookup for the ancestor with the ancestor's aspect set, then restores the render state.
-   World renderer, party/PC/summary GUI, battle overlay and item renderer all use these lookups.
-No Pokémon data is changed and nothing extra is saved.
-
-## Selection rules
-Chain = [self, parent, grandparent, ...] (cut at 12 or on cycles). n = chain length.
-* **Everstone**: earliest ancestor, needs n >= 2.
-* **Eviolite**: stage index (n-1)/2 counting from the earliest, needs n >= 3 (strictly between earliest and self).
-  3 stages -> the middle one. 2-stage lines: Eviolite does nothing (no distinct middle stage).
-* No valid target -> normal appearance, no crash. Branching lines resolve to the Pokémon's real ancestry because we only walk backward.
-* A form without its own pre-evolution falls back to the species' pre-evolution.
-
-## Build
-1. Copy `Cobblemon-fabric-1_8_1_1_21_1.jar` into `libs/` (or edit `cobblemon_jar` in `gradle.properties`).
-2. JDK 21 + Gradle 8.12+: `gradle wrapper --gradle-version 8.12` (once), then `./gradlew build`.
-3. Jar: `build/libs/evolution-cosmetics-0.1.0.jar`.
-Dev client: `./gradlew runClient` — dev server: `./gradlew runServer`.
+## Requirements (server)
+Minecraft 1.21.1 · Fabric Loader >= 0.17.2 · Fabric API · Fabric Language Kotlin · Cobblemon 1.8.1 (Fabric) · Java 21.
+Clients: exactly what your Cobblemon server already requires (Cobblemon itself). No client jar, no resource pack, no config.
 
 ## Install
-Client **and** server both need the mod jar plus Cobblemon 1.8.1, Fabric API and Fabric Loader >= 0.17.2.
-(The server needs it for the cosmetic-item data; the client needs it for the rendering mixin.)
-No separate resource pack is needed: all models/textures/animations are Cobblemon's own.
+1. Copy `evolution-cosmetics-0.2.0.jar` into the server's `mods/` folder.
+2. Restart the server. The log must show `Cobblemon Evolution Cosmetics loaded`.
+3. In game (op): `/evocosmetics status` should report `Ours: [evolution_cosmetics:evolution_items (1025 pokemon filters)]`.
 
-## If Everstone/Eviolite are not accepted by the cosmetic slot
-Run `/evocosmetics status` first: it says whether Cobblemon loaded our assignment. Data inside a mod jar never appears in the
-Data Packs screen, so its absence there is normal. As an independent test, drop `evolution-cosmetics-datapack.zip`
-(same structure as other Cobblemon cosmetic datapacks: `pack.mcmeta` + `data/cobblemon/cosmetic_items/`) into the world's
-`datapacks/` folder; it lists every Cobblemon species by plain name, so it shows up in `/datapack list` and works without the wildcard filter.
-The cosmetic option only appears when you hold the item, right-click YOUR OWN Pokémon (sent out) and choose the cosmetic option in the interaction wheel.
+Players then use Cobblemon's normal cosmetic-slot interaction: hold an Everstone/Eviolite, open the Pokémon's
+interaction wheel, choose the cosmetic option. Removing the item restores the normal look.
 
-## Debug commands (op level 2, read-only)
-`/evocosmetics status` — shows how many cosmetic assignments Cobblemon loaded and whether ours is among them.
-`/evocosmetics resolve charizard` — prints each form's ancestry and the Everstone/Eviolite targets.
-`/evocosmetics audit` — resolves every species/form; chain-length summary in chat, details in the log.
+## How it works (no client code)
+1. `data/evolution_cosmetics/cosmetic_items/evolution_items.json` lists every Cobblemon species and maps
+   Everstone -> aspect `evo_cosmetic-earliest`, Eviolite -> `evo_cosmetic-middle`. Cobblemon loads it like any
+   cosmetic-item data and itself syncs the assignments to connected players.
+2. Cobblemon's built-in cosmetic-slot aspect provider turns the slot item into that marker aspect on the Pokémon.
+3. Every tick, `PokemonServerDelegate#updateTrackedValues` copies the Pokémon's species and aspects into the
+   entity's synced data (`SPECIES`, `ASPECTS`). The Cobblemon client reads exactly those two values to choose the
+   model and texture. Cobblemon takes them from a private `getMock()` override (the Illusion/Transform mechanism) when
+   present. `PokemonServerDelegateMixin` supplies a `getMock()` result carrying only the ancestor's species and aspects.
+4. `EvolutionResolver` finds the ancestor by walking Cobblemon's registered pre-evolution data backwards from the
+   Pokémon's own species/form (no per-species code). Branching lines (Eevee) always resolve to the real ancestry.
+5. Nothing else is overridden and no `MocKEffect` is registered, so the `Pokemon` object, its real species/form, hitbox,
+   flight/swimming logic and Pokédex scan are untouched. If a real Illusion/Transform effect is active it wins.
 
-## Known / suspected limitations (verify in game, see TESTING.md)
-* Poser mismatch: a descendant's pose set (e.g. flying) may not exist on the ancestor's poser.
-* Hitbox, scale and movement stay the original species' (rendering only).
-* Aspects that exist only on the original species are dropped; the ancestor's own form aspects are added.
-* Everstone/Eviolite are accepted by every listed Cobblemon species (even those with no earlier stage; they just do nothing).
-* While worn the item leaves the player's inventory (Cobblemon's normal cosmetic-slot behaviour) and returns when removed.
-* Not tested: trading, mod-added species, other mods that also hook VaryingModelRepository.
+## Selection rules
+Chain = [self, parent, grandparent, ...] (capped at 12). With n stages: Everstone = earliest (n >= 2); Eviolite =
+stage index (n-1)/2 counted from the earliest (n >= 3); otherwise nothing changes. Pre-evolutions written as
+`"meowth galarian"` are resolved through their aspects so regional forms are kept (Perrserker -> Galarian Meowth).
 
+## Debug commands (op level 2)
+- `/evocosmetics status` : is our data loaded?
+- `/evocosmetics resolve <species>` : ancestry and Everstone/Eviolite targets for every form.
+- `/evocosmetics audit` : resolves every species/form; details in the server log.
+- `/evocosmetics inspect` : Pokémon within 64 blocks, real species/aspects vs what is advertised to clients.
+- `/evocosmetics set <everstone|eviolite|none>` : **test helper**, sets the cosmetic slot of every Pokémon within
+  64 blocks through Cobblemon's own `Pokemon#setCosmeticItem`. Use only on test worlds.
 
 ## Verification status
+Verified on a real dedicated server (Fabric Loader 0.17.2, Minecraft 1.21.1, Fabric API 0.116.6, Cobblemon 1.8.1,
+Fabric Language Kotlin 1.13.6, intermediary mappings, Windows, Java 21), with no client attached:
+- The mod and its mixins load without errors.
+- With an Everstone/Eviolite in the cosmetic slot, the values the server advertises for `SPECIES`/`ASPECTS`
+  change to the ancestor (e.g. Charizard -> Charmander / Charmeleon; Azumarill -> Azurill / Marill; Obstagoon ->
+  Zigzagoon(galarian) / Linoone(galarian); Mr. Rime -> Mime Jr. / Mr. Mime(galarian); Raichu(Alola) -> Pichu / Pikachu),
+  while the real species/form/aspects stay as they were. Shiny and gender aspects are preserved.
+- Species with too short a chain (Tauros, Eevee, Pikachu with Eviolite, ...) are left unchanged.
+- Removing the item restores the normal values.
 
-Verified by build/inspection:
-- `gradle build` succeeds against `Cobblemon-fabric-1.8.1+1.21.1.jar`.
-- The mixin's shadow/inject descriptors match the real `VaryingModelRepository` methods
-  (`getPoser/getTexture/getTextureNoSubstitute/getLayers/getSprite`).
-- All 1025 species in the jar are listed in the data file; 70 forms define their own pre-evolution
-  (e.g. Alolan Raichu -> Pikachu, Perrserker -> Galarian Meowth).
+Verified in bytecode, NOT exercised with a client by this build:
+- The Cobblemon client applies `SPECIES`/`ASPECTS` from entity data (`PokemonClientDelegate#onSyncedDataUpdated`) and
+  reloads the model; Cobblemon syncs cosmetic-item assignments to players on join (`CobblemonCosmeticItems#sync`).
+- The earlier client-side prototype (v0.1.0) was reported working in game; v0.2.0 reaches the same appearance through
+  server data instead, but the in-game look of v0.2.0 itself still needs a check with a real client (see TESTING.md).
 
-Verified in game (reported by the author's testing):
-- The appearance changes in the world and the other views, including poses/animations of descendants,
-  regional/alternate forms, trading and species added by other mods.
+## Limitations (by design or untested)
+- **World rendering only.** Party screen, PC, summary, Pokédex and battle UI are drawn from the real Pokémon data the
+  server sends and keep showing the real species. Changing that would mean sending false Pokémon data to clients.
+- Hitbox, scale, movement, flying/swimming and moves stay those of the real species. Poses a descendant has but the
+  ancestor's model lacks (e.g. a flying pose) may animate imperfectly.
+- Entities only refresh while they tick (a player must be nearby), which is normal for any entity.
+- Forms that depend on feature properties rather than aspects in a pre-evolution (e.g. `wolf_form=dusk`) are not
+  reproduced; the ancestor appears in its standard look. Where Cobblemon's own data names a plain pre-evolution
+  (e.g. Hisuian Typhlosion -> `quilava`), that is what is shown.
+- Species added by other mods are not in the generated data file; add their names to
+  `data/evolution_cosmetics/cosmetic_items/evolution_items.json` (or ship another cosmetic_items datapack).
+- Untested: other mods that override `getMock()` or the entity synced data, trading, very large servers.
 
-Limitations (by design):
-- Visual only: hitbox, scale, movement, stats, moves, abilities and held item stay those of the real species.
-- Other mods that also hook `VaryingModelRepository` may interact; not exhaustively tested.
+## Build
+Needs JDK 21 and Gradle 8.12 (Windows: unpack Gradle in a short path, e.g. `C:\gradle-8.12`).
+Put the Cobblemon jar in `libs/` as `Cobblemon-fabric-1_8_1_1_21_1.jar`, then run `gradle build`.
+The dev client cannot boot a release Cobblemon with Yarn (Kotlin reflection metadata), so test on a real server.
 
-Build note (Windows): Gradle fails with "agent library failed Agent_OnLoad" if unpacked in a very long path;
-use a short path such as `C:\gradle-8.12`.
+## License
+MIT.

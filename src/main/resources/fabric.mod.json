@@ -3,17 +3,22 @@
   "id": "evolution_cosmetics",
   "version": "${version}",
   "name": "Cobblemon Evolution Cosmetics",
-  "description": "Everstone / Eviolite in a Pokémon's cosmetic slot make it look like its earliest / middle evolution stage. Visual only.",
-  "authors": ["AlexCoronel03"],
+  "description": "Server-side only: Everstone / Eviolite in a Pokémon's cosmetic slot make it look like its earliest / middle evolution stage. Visual only. Players need no client mod.",
+  "authors": [
+    "AlexCoronel03"
+  ],
   "license": "MIT",
-  "contact": { "sources": "https://github.com/AlexCoronel03/Evolution-Cosmetics" },
+  "contact": {
+    "sources": "https://github.com/AlexCoronel03/Evolution-Cosmetics"
+  },
   "environment": "*",
   "entrypoints": {
-    "main": ["dev.evocosmetics.EvolutionCosmeticsMod"],
-    "client": ["dev.evocosmetics.client.EvolutionCosmeticsClient"]
+    "main": [
+      "dev.evocosmetics.EvolutionCosmeticsMod"
+    ]
   },
   "mixins": [
-    { "config": "evolution_cosmetics.mixins.json", "environment": "client" }
+    "evolution_cosmetics.mixins.json"
   ],
   "depends": {
     "fabricloader": ">=0.17.2",

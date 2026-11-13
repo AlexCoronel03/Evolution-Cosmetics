@@ -1,8 +1,10 @@
 package dev.evocosmetics.resolve;
 
+import com.cobblemon.mod.common.api.pokemon.PokemonProperties;
 import com.cobblemon.mod.common.api.pokemon.evolution.PreEvolution;
 import com.cobblemon.mod.common.pokemon.FormData;
 import com.cobblemon.mod.common.pokemon.Species;
+import dev.evocosmetics.mixin.CobblemonLazyPreEvolutionAccessor;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -69,6 +71,16 @@ public final class EvolutionResolver {
             }
             curSpecies = nextSpecies;
             curForm = nextForm != null ? nextForm : nextSpecies.getStandardForm();
+            if (curForm == nextSpecies.getStandardForm()) {
+                // "meowth galarian": the form is expressed as an aspect, which PreEvolution#getForm ignores
+                Set<String> aspects = aspectsOf(pre);
+                if (!aspects.isEmpty()) {
+                    FormData byAspects = nextSpecies.getForm(aspects);
+                    if (byAspects != null) {
+                        curForm = byAspects;
+                    }
+                }
+            }
         }
         return chain;
     }
@@ -86,6 +98,19 @@ public final class EvolutionResolver {
                 yield Optional.of(chain.get(n - 1 - earliestFirstIndex));
             }
         };
+    }
+
+    private static Set<String> aspectsOf(PreEvolution pre) {
+        if ((Object) pre instanceof CobblemonLazyPreEvolutionAccessor accessor) {
+            try {
+                PokemonProperties props = accessor.evocosmetics$getProperties();
+                Set<String> aspects = props == null ? null : props.getAspects();
+                return aspects == null ? Set.of() : aspects;
+            } catch (RuntimeException ignored) {
+                // fall through: keep the form PreEvolution#getForm reported
+            }
+        }
+        return Set.of();
     }
 
     private static PreEvolution preEvolutionOf(Species species, FormData form) {

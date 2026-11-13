@@ -6,9 +6,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Common entrypoint. The mod stores no data and changes no Pokémon: the Everstone/Eviolite
- * assignment lives in data/evolution_cosmetics/cosmetic_items/, and Cobblemon's own cosmetic-slot
- * code (Pokemon#cosmeticItem + COSMETIC_SLOT_ASPECT) turns it into aspects that are synced to clients.
+ * Common entrypoint (server logic only, no client code). The mod stores no data and changes no Pokémon: the Everstone/Eviolite
+ * assignment lives in data/evolution_cosmetics/cosmetic_items/ (synced to clients by Cobblemon itself), and
+ * PokemonServerDelegateMixin makes the server advertise the ancestor's species/aspects in the entity's synced data.
  */
 public class EvolutionCosmeticsMod implements ModInitializer {
     public static final String MOD_ID = "evolution_cosmetics";
@@ -20,3 +20,4 @@ public class EvolutionCosmeticsMod implements ModInitializer {
         LOGGER.info("Cobblemon Evolution Cosmetics loaded (visual-only; uses Pokemon#cosmeticItem, never the held item).");
     }
 }
+
