@@ -4,8 +4,7 @@
   "package": "dev.evocosmetics.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
-    "CobblemonLazyPreEvolutionAccessor",
-    "PokemonServerDelegateMixin"
+    "CobblemonLazyPreEvolutionAccessor"
   ],
   "injectors": {
     "defaultRequire": 1

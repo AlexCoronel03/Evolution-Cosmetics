@@ -1,20 +1,24 @@
-# Testing (server-side build)
+# Testing
 
-## A. Server console / RCON (no client needed)
-1. Start the server with Cobblemon 1.8.1 + this jar. Expect `Cobblemon Evolution Cosmetics loaded`, no mixin errors.
+## A. Server only (no client needed)
+1. Start the server with Cobblemon 1.8.1 + this jar. Expect `Cobblemon Evolution Cosmetics loaded` and
+   `Client resource pack for N species written to ...`.
 2. `/evocosmetics status` -> `Ours: [evolution_cosmetics:evolution_items (1025 pokemon filters)]`.
 3. `/evocosmetics resolve charizard` -> `Everstone -> Charmander | Eviolite -> Charmeleon`.
-4. `/spawnpokemon charizard <x> <y> <z>`, then `/evocosmetics set everstone`, then `/evocosmetics inspect`:
-   `REAL species=cobblemon:charizard ... ADVERTISED species=cobblemon:charmander`.
-   `set eviolite` -> `charmeleon`; `set none` -> `charizard`. (Entities only refresh while they tick: stay nearby, or
-   `/forceload add` the area on an empty test server.)
+4. `/evocosmetics verifypack` -> `... checks over N species, 0 failures`. The log also prints `[verifypack sample]` lines
+   with the poser/model/texture Cobblemon's own resolver picks, e.g. Charizard + `evo_cosmetic-earliest` ->
+   `poser=cobblemon:charmander ... charmander.png`.
+5. `/spawnpokemon charizard <x> <y> <z>`, `/evocosmetics set everstone`, `/evocosmetics inspect` -> still
+   `species=cobblemon:charizard`, aspects now contain `evo_cosmetic-earliest`. `set none` removes it.
 
 ## B. With a real client (what players will see)
-Join with a normal Cobblemon 1.8.1 client that does NOT have this mod.
-1. Own a Charizard (or any 3-stage Pokémon), hold an Everstone, open the interaction wheel -> cosmetic option -> apply.
-2. Send the Pokémon out: it must look like Charmander. Eviolite: like Charmeleon. Remove the item: Charizard again.
-3. Check regional lines: Perrserker (Galarian Meowth), Obstagoon, Mr. Rime, Raichu (Alola).
-4. Check that a shiny keeps its colour, and that a flying/swimming Pokémon does not glitch or crash the client.
-5. Confirm the party/PC/summary screens still show the real species (expected, see README).
-6. Rejoin: the appearance must persist.
+Single player: put only the jar in `mods/` and skip step 1.
+1. Host `evolution_cosmetics_pack.zip`, set `resource-pack` and `resource-pack-sha1` in `server.properties`, restart.
+2. Join with a normal Cobblemon 1.8.1 client that has NOT got this mod. Accept the resource-pack prompt.
+3. Own a Charizard (or any 3-stage Pokémon), hold an Everstone, open the interaction wheel, choose the cosmetic option.
+4. Send it out: it must look like Charmander (flame included). Eviolite: Charmeleon. Remove the item: Charizard again.
+5. Check that nothing else changed: name, level, moves and cry are Charizard's; the summary screen shows Charizard data.
+6. Check the party, PC and summary 3D previews (they should show the same skin), a shiny Pokémon, and regional lines
+   (Perrserker, Obstagoon, Mr. Rime, Raichu of Alola).
+7. Check a flying or swimming Pokémon for animation glitches or crashes, and that rejoining keeps the skin.
 Report anything wrong together with the client `latest.log`.

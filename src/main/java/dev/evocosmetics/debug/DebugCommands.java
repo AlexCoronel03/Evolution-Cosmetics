@@ -10,7 +10,12 @@ import com.mojang.brigadier.context.CommandContext;
 import com.cobblemon.mod.common.CobblemonCosmeticItems;
 import com.cobblemon.mod.common.pokemon.cosmetic.CosmeticItemAssignment;
 import com.cobblemon.mod.common.pokemon.cosmetic.CosmeticItemDefinition;
+import com.google.gson.JsonObject;
 import dev.evocosmetics.EvolutionCosmeticsMod;
+import dev.evocosmetics.pack.PackGenerator;
+import dev.evocosmetics.pack.PackVerifier;
+import dev.evocosmetics.pack.ResolverIndex;
+import net.fabricmc.loader.api.FabricLoader;
 import dev.evocosmetics.resolve.CosmeticMode;
 import dev.evocosmetics.resolve.EvolutionResolver;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
@@ -22,9 +27,12 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.Box;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.Optional;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
@@ -32,7 +40,9 @@ import java.util.stream.Collectors;
 /**
  * /evocosmetics resolve <species>  - prints each form's ancestry and the Everstone / Eviolite targets.
  * /evocosmetics audit              - resolves every registered species+form; summary in chat, details in the log.
- * /evocosmetics inspect            - nearest Pokémon entities (64 blocks): real species/aspects vs what is advertised to clients.
+ * /evocosmetics inspect            - nearest Pokémon entities (64 blocks): species, aspects and cosmetic item.
+ * /evocosmetics generatepack       - writes evolution_cosmetics_pack.zip (client resource pack) in the server folder.
+ * /evocosmetics verifypack         - checks the generated pack against Cobblemon's own client resolver code.
  * /evocosmetics set <item|none>    - TEST HELPER: puts cobblemon:everstone/eviolite (or nothing) in the cosmetic slot of the
  *                                    nearest Pokémon entity, through Cobblemon's own Pokemon#setCosmeticItem (op only).
  * Everything except "set" is read-only.
@@ -49,6 +59,8 @@ public final class DebugCommands {
                                         .executes(DebugCommands::resolve)))
                         .then(CommandManager.literal("status").executes(DebugCommands::status))
                         .then(CommandManager.literal("inspect").executes(DebugCommands::inspect))
+                        .then(CommandManager.literal("generatepack").executes(DebugCommands::generatePack))
+                        .then(CommandManager.literal("verifypack").executes(DebugCommands::verifyPack))
                         .then(CommandManager.literal("set")
                                 .then(CommandManager.argument("item", StringArgumentType.word())
                                         .executes(DebugCommands::setCosmetic)))
@@ -138,10 +150,8 @@ public final class DebugCommands {
         for (PokemonEntity e : list) {
             Pokemon p = e.getPokemon();
             String line = e.getUuidAsString().substring(0, 8)
-                    + " REAL species=" + p.getSpecies().getResourceIdentifier() + " form=" + p.getForm().getName()
-                    + " aspects=" + p.getAspects() + " cosmeticItem=" + p.getCosmeticItem().getItem()
-                    + " | ADVERTISED species=" + e.getDataTracker().get(PokemonEntity.getSPECIES())
-                    + " aspects=" + e.getDataTracker().get(PokemonEntity.getASPECTS());
+                    + " species=" + p.getSpecies().getResourceIdentifier() + " form=" + p.getForm().getName()
+                    + " aspects=" + p.getAspects() + " cosmeticItem=" + p.getCosmeticItem().getItem();
             ctx.getSource().sendFeedback(() -> Text.literal(line), false);
         }
         if (list.isEmpty()) {
@@ -171,5 +181,50 @@ public final class DebugCommands {
         int n = list.size();
         ctx.getSource().sendFeedback(() -> Text.literal("Cosmetic slot set on " + n + " Pokémon"), false);
         return n;
+    }
+
+    private static int generatePack(CommandContext<ServerCommandSource> ctx) {
+        try {
+            PackGenerator.Result r = PackGenerator.generateToGameDir();
+            String msg = "Pack for " + r.species() + " species written to " + r.zip() + " (" + Files.size(r.zip()) / 1024
+                    + " KiB). sha1=" + r.sha1();
+            EvolutionCosmeticsMod.LOGGER.info(msg);
+            ctx.getSource().sendFeedback(() -> Text.literal(msg), false);
+            return r.species();
+        } catch (Exception e) {
+            EvolutionCosmeticsMod.LOGGER.error("Pack generation failed", e);
+            ctx.getSource().sendError(Text.literal("Pack generation failed: " + e));
+            return 0;
+        }
+    }
+
+    private static int verifyPack(CommandContext<ServerCommandSource> ctx) {
+        try {
+            ResolverIndex index = ResolverIndex.load();
+            Map<String, List<JsonObject>> generated = PackGenerator.build(index);
+            PackVerifier.Report report = PackVerifier.run(index, generated);
+            String head = "verifypack: " + report.checks() + " checks over " + report.speciesChecked() + " species, "
+                    + report.failureCount() + " failures";
+            EvolutionCosmeticsMod.LOGGER.info(head);
+            for (String f : report.failures()) {
+                EvolutionCosmeticsMod.LOGGER.warn("[verifypack] {}", f);
+            }
+            String[][] samples = {
+                    {"cobblemon:charizard", ""}, {"cobblemon:charizard", "evo_cosmetic-earliest"},
+                    {"cobblemon:charizard", "evo_cosmetic-middle"}, {"cobblemon:charizard", "evo_cosmetic-earliest,shiny"},
+                    {"cobblemon:obstagoon", "evo_cosmetic-earliest"}, {"cobblemon:raichu", "alolan,evo_cosmetic-earliest"},
+                    {"cobblemon:perrserker", "evo_cosmetic-earliest"}, {"cobblemon:tauros", "evo_cosmetic-earliest"}};
+            for (String[] s : samples) {
+                Set<String> aspects = s[1].isEmpty() ? Set.of() : Set.of(s[1].split(","));
+                EvolutionCosmeticsMod.LOGGER.info("[verifypack sample] {} {} -> {}", s[0], aspects,
+                        PackVerifier.sample(index, generated, s[0], aspects));
+            }
+            ctx.getSource().sendFeedback(() -> Text.literal(head + (report.failureCount() > 0 ? " (see log)" : "")), false);
+            return report.failureCount() == 0 ? 1 : 0;
+        } catch (Throwable t) {
+            EvolutionCosmeticsMod.LOGGER.error("verifypack could not run", t);
+            ctx.getSource().sendError(Text.literal("verifypack could not run: " + t));
+            return 0;
+        }
     }
 }

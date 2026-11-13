@@ -3,7 +3,7 @@
   "id": "evolution_cosmetics",
   "version": "${version}",
   "name": "Cobblemon Evolution Cosmetics",
-  "description": "Server-side only: Everstone / Eviolite in a Pokémon's cosmetic slot make it look like its earliest / middle evolution stage. Visual only. Players need no client mod.",
+  "description": "Everstone / Eviolite in a Pokémon's cosmetic slot change only its skin to its earliest / middle evolution stage. Server mod + server-pushed resource pack; players install nothing.",
   "authors": [
     "AlexCoronel03"
   ],
